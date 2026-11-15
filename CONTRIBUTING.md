@@ -122,6 +122,16 @@ If you want to test images that have already been built and published to a regis
     > ./tests/run-tests.ps1 -PullImages -Paths '*10.0*noble*'
     ```
 
+#### Running Tests Against a Remote Docker Host over SSH
+
+The tests can control a Docker daemon on another machine through an SSH tunnel by setting `DOCKER_SSH_HOST` (and optionally `DOCKER_SSH_USER`, `DOCKER_SSH_IDENTITY_FILE`, `DOCKER_SSH_KNOWN_HOSTS_FILE`, ...). See [Controlling a Remote Docker Daemon over SSH](documentation/docker-over-ssh.md) for configuration, security notes and limitations.
+
+- Verify the SSH connection to the remote Docker daemon:
+
+    ``` console
+    > ./tests/run-tests.ps1 -Version 10.0 -TestCategories docker-ssh
+    ```
+
 #### Running Specific Tests
 
 To run specific tests, use the `-CustomTestFilter` argument with either `run-tests.ps1` or `build-and-test.ps1`. This argument accepts [Xunit test filtering](https://learn.microsoft.com/dotnet/core/testing/selective-unit-tests?pivots=xunit) expressions:

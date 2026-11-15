@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using Microsoft.DotNet.Docker.Tests.DockerSsh;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Xunit.Abstractions;
@@ -197,7 +198,8 @@ public class DockerHelper(ITestOutputHelper outputHelper)
     }
 
     private static (Process Process, string StdOut, string StdErr) ExecuteProcess(
-        string args, ITestOutputHelper outputHelper) => ExecuteHelper.ExecuteProcess("docker", args, outputHelper);
+        string args, ITestOutputHelper outputHelper) =>
+        ExecuteHelper.ExecuteProcess("docker", args, outputHelper, DockerHostConnection.DockerEnvironment);
 
     private string ExecuteWithLogging(string args, bool ignoreErrors = false, bool autoRetry = false)
     {
