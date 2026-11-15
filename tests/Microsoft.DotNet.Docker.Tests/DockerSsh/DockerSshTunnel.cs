@@ -6,6 +6,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 
@@ -145,8 +146,56 @@ public sealed class DockerSshTunnel : IDisposable
             Thread.Sleep(100);
         }
 
+        // The local socket exists as soon as SSH authentication succeeded, but the server can still refuse to
+        // open the forwarded channel (for example when the user cannot access the Docker socket or sshd forbids
+        // stream local forwarding). Ping the daemon so such problems fail fast with a clear message.
+        string? pingError = PingDockerDaemon(socketPath, TimeSpan.FromSeconds(options.ConnectTimeoutSeconds));
+        if (pingError is not null)
+        {
+            string error = tunnel.GetStandardError();
+            tunnel.Dispose();
+            throw new InvalidOperationException(
+                $"Connected to {options.DisplayTarget} over SSH, but the Docker daemon did not answer: {pingError}. " +
+                $"Check that the SSH user can access '{options.RemoteSocket}' on the remote host and that sshd allows " +
+                $"stream local forwarding (AllowStreamLocalForwarding, and no 'restrict' without 'port-forwarding' in authorized_keys)." +
+                $"{Environment.NewLine}ssh stderr: {error}");
+        }
+
         log?.Invoke($"SSH tunnel ready; using DOCKER_HOST={tunnel.DockerHost}");
         return tunnel;
+    }
+
+    /// <summary>
+    /// Sends <c>GET /_ping</c> to the Docker API over the forwarded socket.
+    /// </summary>
+    /// <returns><c>null</c> on success, otherwise a description of the failure.</returns>
+    internal static string? PingDockerDaemon(string socketPath, TimeSpan timeout)
+    {
+        try
+        {
+            using Socket socket = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+            int timeoutMs = (int)timeout.TotalMilliseconds;
+            socket.SendTimeout = timeoutMs;
+            socket.ReceiveTimeout = timeoutMs;
+            socket.Connect(new UnixDomainSocketEndPoint(socketPath));
+            socket.Send(Encoding.ASCII.GetBytes("GET /_ping HTTP/1.0\r\nHost: docker\r\n\r\n"));
+
+            byte[] buffer = new byte[256];
+            int read = socket.Receive(buffer);
+            if (read == 0)
+            {
+                return "the forwarded connection was closed by the remote side";
+            }
+
+            string statusLine = Encoding.ASCII.GetString(buffer, 0, read).Split('\n')[0].Trim();
+            return statusLine.StartsWith("HTTP/1.", StringComparison.Ordinal) && statusLine.Contains(" 200", StringComparison.Ordinal)
+                ? null
+                : $"unexpected response '{statusLine}'";
+        }
+        catch (SocketException ex)
+        {
+            return ex.Message;
+        }
     }
 
     public string GetStandardError()

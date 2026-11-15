@@ -5,7 +5,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading.Tasks;
 using Shouldly;
 using Xunit;
 
@@ -206,5 +210,68 @@ public class DockerSshOptionsTests
 
         InvalidOperationException ex = Should.Throw<InvalidOperationException>(() => DockerSshTunnel.Start(options));
         ex.Message.ShouldContain(DockerSshOptions.SshExecutableVariable);
+    }
+
+    [Theory]
+    [InlineData("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK", true)]
+    [InlineData("HTTP/1.1 500 Internal Server Error\r\n\r\n", false)]
+    [InlineData("", false)]
+    public async Task PingChecksDockerApiResponse(string response, bool expectSuccess)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        DirectoryInfo dir = Directory.CreateTempSubdirectory("dkssh-test-");
+        try
+        {
+            string socketPath = Path.Combine(dir.FullName, "s.sock");
+            using Socket listener = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+            listener.Bind(new UnixDomainSocketEndPoint(socketPath));
+            listener.Listen(1);
+
+            Task server = Task.Run(async () =>
+            {
+                using Socket client = await listener.AcceptAsync();
+                byte[] buffer = new byte[1024];
+                int read = await client.ReceiveAsync(buffer);
+                Encoding.ASCII.GetString(buffer, 0, read).ShouldStartWith("GET /_ping ");
+                if (response.Length > 0)
+                {
+                    await client.SendAsync(Encoding.ASCII.GetBytes(response));
+                }
+
+                client.Shutdown(SocketShutdown.Both);
+            });
+
+            string? error = DockerSshTunnel.PingDockerDaemon(socketPath, TimeSpan.FromSeconds(5));
+            await server;
+
+            if (expectSuccess)
+            {
+                error.ShouldBeNull();
+            }
+            else
+            {
+                error.ShouldNotBeNull();
+            }
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PingReportsMissingSocket()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        DockerSshTunnel.PingDockerDaemon("/nonexistent/" + Guid.NewGuid().ToString("N"), TimeSpan.FromSeconds(1))
+            .ShouldNotBeNull();
     }
 }
