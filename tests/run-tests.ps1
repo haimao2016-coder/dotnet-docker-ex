@@ -28,7 +28,7 @@ param(
 
     [string]$ImageInfoPath,
 
-    [ValidateSet("runtime", "runtime-deps", "aspnet", "sdk", "pre-build", "sample", "monitor", "aspire-dashboard", "yarp")]
+    [ValidateSet("runtime", "runtime-deps", "aspnet", "sdk", "pre-build", "sample", "monitor", "aspire-dashboard", "yarp", "docker-ssh")]
     [string[]]$TestCategories = @("runtime", "runtime-deps", "aspnet", "sdk", "monitor", "aspire-dashboard", "yarp"),
 
     [string]$CustomTestFilter,
@@ -68,10 +68,17 @@ $DockerToolsDir = "$PSScriptRoot/../eng/docker-tools"
 $DotnetInstallDir = "$PSScriptRoot/../.dotnet"
 & $DockerToolsDir/Install-DotNetSdk.ps1 -InstallPath $DotnetInstallDir
 
-# Ensure that ImageBuilder image is pulled because some tests require it
-& $DockerToolsDir/Get-ImageBuilder.ps1
+if ($env:DOCKER_SSH_HOST) {
+    # The tests open their own SSH tunnel to the remote Docker daemon (see documentation/docker-over-ssh.md).
+    # Skip steps that would talk to a local Docker daemon, which may not exist.
+    Log "DOCKER_SSH_HOST is set; tests will control the Docker daemon on '$env:DOCKER_SSH_HOST' over SSH."
+}
+else {
+    # Ensure that ImageBuilder image is pulled because some tests require it
+    & $DockerToolsDir/Get-ImageBuilder.ps1
 
-$activeOS = docker version -f "{{ .Server.Os }}"
+    $activeOS = docker version -f "{{ .Server.Os }}"
+}
 
 Push-Location "$PSScriptRoot\Microsoft.DotNet.Docker.Tests"
 
