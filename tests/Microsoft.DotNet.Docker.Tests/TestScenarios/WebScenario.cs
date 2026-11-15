@@ -7,6 +7,7 @@ using System;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
+using Microsoft.DotNet.Docker.Tests.DockerSsh;
 using Polly;
 using Polly.Retry;
 using Xunit.Abstractions;
@@ -79,8 +80,9 @@ public abstract class WebScenario(ProductImageData imageData, DockerHelper docke
         }
 
         // Can't use localhost when running inside containers or Windows.
+        // When the Docker daemon is reached over SSH, published ports live on the remote host.
         string url = !Config.IsRunningInContainer && DockerHelper.IsLinuxContainerModeEnabled
-            ? $"http://localhost:{dockerHelper.GetContainerHostPort(containerName, containerPort)}{pathAndQuery}"
+            ? $"http://{DockerHostConnection.PublishedPortHost}:{dockerHelper.GetContainerHostPort(containerName, containerPort)}{pathAndQuery}"
             : $"http://{dockerHelper.GetContainerAddress(containerName)}:{containerPort}{pathAndQuery}";
 
         ResiliencePipeline pipeline = new ResiliencePipelineBuilder()
